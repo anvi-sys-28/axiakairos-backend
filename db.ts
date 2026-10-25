@@ -31,6 +31,7 @@ function resolveDataDir(): string {
 
 const FALLBACK_DIR = resolveDataDir();
 const FALLBACK_FILE = path.join(FALLBACK_DIR, 'contact_messages.json');
+const CMS_FALLBACK_FILE = path.join(FALLBACK_DIR, 'cms_content.json');
 
 function ensureFallbackFile(): ContactMessage[] {
   try {
@@ -106,11 +107,17 @@ export async function initDb(): Promise<void> {
         status VARCHAR(50) DEFAULT 'unread',
         created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS cms_content (
+        id VARCHAR(64) PRIMARY KEY,
+        data JSONB NOT NULL,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     client.release();
 
     isPostgresReady = true;
-    console.log('✅ PostgreSQL connected and contact_messages table verified.');
+    console.log('✅ PostgreSQL connected and database tables verified.');
   } catch (err: any) {
     postgresError = err.message || 'Failed to connect to PostgreSQL';
     isPostgresReady = false;
@@ -244,4 +251,81 @@ export async function getStats() {
     archived,
     replied,
   };
+}
+
+// -------------------------------------------------------------
+// CMS Content Persistence (Managed from Admin Side)
+// -------------------------------------------------------------
+
+export async function getStoredCMSData(): Promise<any | null> {
+  if (isPostgresReady && pool) {
+    try {
+      const res = await pool.query(`SELECT data FROM cms_content WHERE id = 'active' LIMIT 1`);
+      if (res.rows.length > 0) {
+        return res.rows[0].data;
+      }
+    } catch (err) {
+      console.error('PostgreSQL CMS read error, checking fallback file:', err);
+    }
+  }
+
+  try {
+    if (fs.existsSync(CMS_FALLBACK_FILE)) {
+      const raw = fs.readFileSync(CMS_FALLBACK_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) {
+    console.error('Failed reading CMS fallback file:', e);
+  }
+
+  return null;
+}
+
+export async function saveStoredCMSData(data: any): Promise<boolean> {
+  let savedToDb = false;
+
+  if (isPostgresReady && pool) {
+    try {
+      await pool.query(
+        `INSERT INTO cms_content (id, data, updated_at)
+         VALUES ('active', $1, NOW())
+         ON CONFLICT (id) DO UPDATE SET data = $1, updated_at = NOW()`,
+        [JSON.stringify(data)]
+      );
+      savedToDb = true;
+    } catch (err) {
+      console.error('PostgreSQL CMS write error, saving to fallback:', err);
+    }
+  }
+
+  try {
+    if (!fs.existsSync(FALLBACK_DIR)) {
+      fs.mkdirSync(FALLBACK_DIR, { recursive: true });
+    }
+    fs.writeFileSync(CMS_FALLBACK_FILE, JSON.stringify(data, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.error('Failed writing CMS fallback file:', e);
+    return savedToDb;
+  }
+}
+
+export async function resetStoredCMSData(): Promise<boolean> {
+  if (isPostgresReady && pool) {
+    try {
+      await pool.query(`DELETE FROM cms_content WHERE id = 'active'`);
+    } catch (err) {
+      console.error('PostgreSQL CMS reset error:', err);
+    }
+  }
+
+  try {
+    if (fs.existsSync(CMS_FALLBACK_FILE)) {
+      fs.unlinkSync(CMS_FALLBACK_FILE);
+    }
+    return true;
+  } catch (e) {
+    console.error('Failed removing CMS fallback file:', e);
+    return false;
+  }
 }

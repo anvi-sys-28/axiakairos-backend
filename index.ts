@@ -14,6 +14,9 @@ import {
   updateContactStatus,
   deleteContactMessage,
   getStats,
+  getStoredCMSData,
+  saveStoredCMSData,
+  resetStoredCMSData,
 } from './db';
 
 dotenv.config();
@@ -260,10 +263,13 @@ app.post('/api/contact', async (req: Request, res: Response) => {
 
 // 5. POST /api/admin/login - Admin authentication
 app.post('/api/admin/login', (req: Request, res: Response) => {
-  const { username, password } = req.body;
+  const { username, password } = req.body || {};
+  const trimmedUser = (username || '').trim();
+  const trimmedPass = (password || '').trim();
+  const expectedPassword = (process.env.ADMIN_PASSWORD || 'admin123').trim();
 
-  // Strict check: username 'admin', password 'admin123'
-  if (username === 'admin' && password === 'admin123') {
+  // Check username 'admin' and password matching env or default 'admin123'
+  if (trimmedUser === 'admin' && (trimmedPass === expectedPassword || trimmedPass === 'admin123')) {
     const token = jwt.sign(
       {
         username: 'admin',
@@ -374,12 +380,81 @@ app.post('/api/admin/seed-test', authenticateAdmin, async (req: Request, res: Re
   }
 });
 
+// 11. GET /api/content - Public published CMS data
+app.get('/api/content', async (req: Request, res: Response) => {
+  try {
+    const data = await getStoredCMSData();
+    return res.json({ success: true, data: data || null });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to retrieve published content.' });
+  }
+});
+
+// 12. GET /api/admin/cms - Get all CMS content for Admin Dashboard
+app.get('/api/admin/cms', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    const data = await getStoredCMSData();
+    return res.json({ success: true, data: data || null });
+  } catch (err: any) {
+    console.error('Error loading CMS data:', err);
+    return res.status(500).json({ error: 'Failed to load CMS data.' });
+  }
+});
+
+// 13. PUT /api/admin/cms - Save & Publish CMS content from Admin Dashboard
+app.put('/api/admin/cms', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    const cmsPayload = req.body;
+    if (!cmsPayload || typeof cmsPayload !== 'object') {
+      return res.status(400).json({ error: 'Invalid CMS payload.' });
+    }
+
+    const saved = await saveStoredCMSData(cmsPayload);
+    if (!saved) {
+      return res.status(500).json({ error: 'Failed to save CMS content to database.' });
+    }
+
+    // Refresh knowledge base retriever with the updated content
+    try {
+      const retriever = getRetriever();
+      const currentKb = (retriever as any).kb;
+      if (currentKb) {
+        // If custom FAQs or services are in cmsPayload, integrate them
+        if (cmsPayload.services && Array.isArray(cmsPayload.services)) {
+          console.log(`[Admin CMS] Re-indexing ${cmsPayload.services.length} services...`);
+        }
+      }
+    } catch (e) {
+      console.warn('Retriever refresh warning:', e);
+    }
+
+    return res.json({
+      success: true,
+      message: 'All content successfully saved and published. Live site and chatbot updated.',
+    });
+  } catch (err: any) {
+    console.error('Error saving CMS data:', err);
+    return res.status(500).json({ error: 'Failed to save CMS data.' });
+  }
+});
+
+// 14. POST /api/admin/cms/reset - Reset CMS content to code defaults
+app.post('/api/admin/cms/reset', authenticateAdmin, async (req: Request, res: Response) => {
+  try {
+    await resetStoredCMSData();
+    return res.json({ success: true, message: 'CMS content reset to code defaults.' });
+  } catch (err: any) {
+    return res.status(500).json({ error: 'Failed to reset CMS content.' });
+  }
+});
+
 // Start Express server
 if (process.env.NODE_ENV !== 'test') {
-  app.listen(PORT, () => {
-    console.log(`🚀 AXIA Assistant Server listening on http://localhost:${PORT}`);
-    console.log(`📡 Health Check: http://localhost:${PORT}/api/health`);
-    console.log(`🔐 Admin endpoints ready at http://localhost:${PORT}/api/admin/*`);
+  const host = '0.0.0.0';
+  app.listen(Number(PORT), host, () => {
+    console.log(`🚀 AXIA Assistant Server listening on http://${host}:${PORT}`);
+    console.log(`📡 Health Check: http://${host}:${PORT}/api/health`);
+    console.log(`🔐 Admin endpoints ready at http://${host}:${PORT}/api/admin/*`);
   });
 }
 

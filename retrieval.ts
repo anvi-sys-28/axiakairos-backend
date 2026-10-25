@@ -286,6 +286,13 @@ export class KnowledgeRetriever {
   public getChunksByType(type: Chunk['type']): Chunk[] {
     return this.kb.chunks.filter((c) => c.type === type);
   }
+
+  public reload(updatedKb: KnowledgeBaseData): void {
+    this.kb = updatedKb;
+    this.miniSearch.removeAll();
+    this.miniSearch.addAll(this.kb.chunks);
+    console.log(`🔄 Knowledge Base refreshed with ${this.kb.chunks.length} chunks.`);
+  }
 }
 
 let instance: KnowledgeRetriever | null = null;

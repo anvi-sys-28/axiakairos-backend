@@ -275,6 +275,15 @@ export const TOOL_REGISTRY: AgentTool[] = [
 
 export const TOOL_DEFINITIONS = TOOL_REGISTRY.map((t) => t.anthropicDefinition);
 
+export const OPENAI_TOOL_DEFINITIONS = TOOL_REGISTRY.map((t) => ({
+  type: 'function' as const,
+  function: {
+    name: t.name,
+    description: t.description,
+    parameters: t.anthropicDefinition.input_schema,
+  },
+}));
+
 export async function executeTool(
   toolName: string,
   args: Record<string, any>,

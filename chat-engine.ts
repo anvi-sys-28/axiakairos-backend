@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { getRetriever, Chunk } from './retrieval';
-import { TOOL_DEFINITIONS, executeTool, ToolContext, CardItem } from './tools';
+import { TOOL_DEFINITIONS, OPENAI_TOOL_DEFINITIONS, executeTool, ToolContext, CardItem } from './tools';
 import { SYSTEM_PROMPT } from './prompt';
 import {
   sanitizeUrls,
@@ -122,28 +123,55 @@ function generateContextAwareChips(context: ToolContext, userMessage: string): s
 /**
  * Executes a chat interaction using either the Claude Tool-Calling Agent or the Grounded Deterministic Engine.
  */
+let openAiQuotaExhaustedUntil = 0;
+
 export async function handleChat(
   userMessage: string,
   history: ChatMessage[],
   sendEvent: StreamCallback
 ): Promise<void> {
-  const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
-  const configuredModel = process.env.AI_MODEL || process.env.CHAT_MODEL || 'claude-haiku-5-5';
+  const openaiApiKey = process.env.OPENAI_API_KEY?.trim();
+  const anthropicApiKey = process.env.ANTHROPIC_API_KEY?.trim();
+  const configuredModel = process.env.AI_MODEL || process.env.CHAT_MODEL || 'gpt-4o-mini';
 
   const toolContext: ToolContext = {
     usedSources: [],
   };
 
-  // If Anthropic API Key is present, run Claude tool-use loop with 15s timeout
-  if (apiKey) {
+  // 1. Primary: If OpenAI API Key is present, run ChatGPT agent loop
+  if (openaiApiKey && Date.now() > openAiQuotaExhaustedUntil) {
     try {
       const selectedModel =
-        configuredModel === 'claude-haiku-5-5' && isHardQuestion(userMessage)
+        configuredModel.startsWith('claude') ? 'gpt-4o-mini' : configuredModel;
+
+      await Promise.race([
+        runOpenAIChat(userMessage, history, openaiApiKey, selectedModel, toolContext, sendEvent),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Total request timeout (15s exceeded)')), 15000)
+        ),
+      ]);
+      return;
+    } catch (err: any) {
+      if (err.status === 429 || (err.message && err.message.includes('credits remaining'))) {
+        openAiQuotaExhaustedUntil = Date.now() + 60 * 1000;
+      }
+      console.warn('OpenAI Agent notice (e.g. quota or offline), engaging Grounded Knowledge Engine:', err.message);
+      // Fall through to deterministic engine
+    }
+  }
+
+  // 2. Secondary: If Anthropic API Key is present (and no OpenAI configured), run Claude tool-use loop
+  else if (anthropicApiKey) {
+    try {
+      const selectedModel =
+        configuredModel.startsWith('gpt')
+          ? 'claude-haiku-5-5'
+          : configuredModel === 'claude-haiku-5-5' && isHardQuestion(userMessage)
           ? 'claude-sonnet-5-5'
           : configuredModel;
 
       await Promise.race([
-        runClaudeChat(userMessage, history, apiKey, selectedModel, toolContext, sendEvent),
+        runClaudeChat(userMessage, history, anthropicApiKey, selectedModel, toolContext, sendEvent),
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Total request timeout (15s exceeded)')), 15000)
         ),
@@ -155,8 +183,157 @@ export async function handleChat(
     }
   }
 
-  // Grounded Deterministic Engine (Offline / zero-hallucination fallback)
+  // 3. Grounded Deterministic Engine (Offline / zero-hallucination fallback)
   await runGroundedEngine(userMessage, history, toolContext, sendEvent);
+}
+
+/**
+ * Runs OpenAI ChatGPT API with Tool Calling loop (max 3 tool calls, streaming final reply).
+ */
+async function runOpenAIChat(
+  userMessage: string,
+  history: ChatMessage[],
+  apiKey: string,
+  model: string,
+  context: ToolContext,
+  sendEvent: StreamCallback
+): Promise<void> {
+  const openai = new OpenAI({ apiKey });
+
+  // Format messages (last 10 turns max)
+  const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+    { role: 'system', content: SYSTEM_PROMPT },
+  ];
+
+  for (const m of history.slice(-10)) {
+    messages.push({
+      role: m.role,
+      content: m.content,
+    });
+  }
+  messages.push({ role: 'user', content: userMessage });
+
+  let toolCallsMade = 0;
+  const maxToolCalls = 3;
+  let fullResponseText = '';
+  let inTokens = 0;
+  let outTokens = 0;
+
+  while (true) {
+    const allowTools = toolCallsMade < maxToolCalls;
+
+    const response = await openai.chat.completions.create({
+      model,
+      messages,
+      tools: allowTools ? (OPENAI_TOOL_DEFINITIONS as any) : undefined,
+      tool_choice: allowTools ? 'auto' : undefined,
+      max_tokens: 400,
+    });
+
+    const choice = response.choices[0];
+    const message = choice?.message;
+
+    if (response.usage) {
+      inTokens += response.usage.prompt_tokens || 0;
+      outTokens += response.usage.completion_tokens || 0;
+    }
+
+    if (!message) break;
+
+    // Check for tool calls
+    if (message.tool_calls && message.tool_calls.length > 0 && allowTools) {
+      messages.push(message);
+
+      for (const call of message.tool_calls) {
+        if (call.type !== 'function') continue;
+        toolCallsMade++;
+        const fnName = call.function.name;
+        let fnArgs: Record<string, any> = {};
+        try {
+          fnArgs = JSON.parse(call.function.arguments);
+        } catch {
+          fnArgs = {};
+        }
+
+        const result = await executeTool(fnName, fnArgs, context);
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+      }
+      continue;
+    }
+
+    // Final answer reached
+    const answerContent = message.content || '';
+    fullResponseText = answerContent;
+
+    // Stream tokens smoothly to frontend
+    const words = answerContent.split(' ');
+    for (let i = 0; i < words.length; i++) {
+      const token = (i === 0 ? '' : ' ') + words[i];
+      sendEvent({ event: 'token', data: token });
+      await new Promise((r) => setTimeout(r, 12));
+    }
+    break;
+  }
+
+  // Cost calculation
+  const isGpt4o = model.toLowerCase().includes('gpt-4o') && !model.toLowerCase().includes('mini');
+  const inRate = isGpt4o ? 2.5 / 1_000_000 : 0.15 / 1_000_000;
+  const outRate = isGpt4o ? 10.0 / 1_000_000 : 0.60 / 1_000_000;
+  const cost = inTokens * inRate + outTokens * outRate;
+
+  console.log(
+    `[AXIA AI Assistant OpenAI] Model: ${model} | In: ${inTokens} tokens | Out: ${outTokens} tokens | Est. Cost: $${cost.toFixed(6)}`
+  );
+
+  // Post-processing guardrails
+  const sanitizedAnswer = sanitizeUrls(fullResponseText);
+  if (context.usedSources.length > 0) {
+    const contextText = context.usedSources.map((s) => s.title).join(' ');
+    verifyNumericGroundedness(sanitizedAnswer, contextText);
+  }
+
+  if (
+    sanitizedAnswer.toLowerCase().includes('cannot answer') ||
+    sanitizedAnswer.toLowerCase().includes('do not have') ||
+    sanitizedAnswer.toLowerCase().includes('not mentioned in the knowledge base')
+  ) {
+    logUnansweredQuestion(userMessage, []);
+  }
+
+  // Emit cards
+  if (context.cards && context.cards.length > 0) {
+    sendEvent({ event: 'cards', data: context.cards });
+  }
+
+  // Emit unique sources
+  if (context.usedSources.length > 0) {
+    const uniqueSources = Array.from(
+      new Map(context.usedSources.map((s) => [s.url, s])).values()
+    );
+    sendEvent({ event: 'sources', data: uniqueSources });
+  }
+
+  // Emit suggestion chips
+  const suggestionChips = generateContextAwareChips(context, userMessage);
+  sendEvent({ event: 'chips', data: suggestionChips });
+
+  // Emit handoff form if requested
+  if (context.wantsHandoff) {
+    sendEvent({
+      event: 'form',
+      data: {
+        reason: context.handoffReason || 'Advisory consultation requested.',
+        prefill: context.handoffPrefill || {},
+      },
+    });
+  }
+
+  sendEvent({ event: 'done', data: { inTokens, outTokens, cost } });
 }
 
 /**

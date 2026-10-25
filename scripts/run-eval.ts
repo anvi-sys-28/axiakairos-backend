@@ -147,7 +147,7 @@ async function queryAssistant(
 }
 
 async function runEvaluation() {
-  const currentModel = process.env.AI_MODEL || process.env.CHAT_MODEL || 'claude-haiku-5-5';
+  const currentModel = process.env.AI_MODEL || 'gpt-4o-mini';
 
   console.log('================================================================');
   console.log('🤖 AXIA ASSISTANT QUALITY EVALUATION SUITE');
@@ -170,7 +170,7 @@ async function runEvaluation() {
   const testCases: TestCase[] = JSON.parse(fs.readFileSync(questionsPath, 'utf8'));
   console.log(`Loaded ${testCases.length} benchmark questions across 11 test categories.\n`);
 
-  const serverUp = await isServerRunning(EVAL_ENDPOINT);
+  const serverUp = process.env.FORCE_DIRECT_EVAL === 'true' ? false : await isServerRunning(EVAL_ENDPOINT);
   console.log(`Execution Mode: ${serverUp ? `Live HTTP (${EVAL_ENDPOINT})` : 'Direct Pipeline Engine (In-Process)'}\n`);
 
   const results: TestResult[] = [];
