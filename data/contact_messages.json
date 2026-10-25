@@ -1,0 +1,47 @@
+[
+  {
+    "id": 1792518138963,
+    "fullName": "Alexander Wright",
+    "company": "Nordic Energy Group",
+    "email": "a.wright@nordicenergy.no",
+    "message": "Inquiring regarding SAP S/4HANA migration strategy and data architecture modernization.",
+    "status": "unread",
+    "createdAt": "2026-10-20T17:42:18.963Z"
+  },
+  {
+    "id": 1792490996416,
+    "fullName": "Alexander Wright",
+    "company": "Nordic Energy Group",
+    "email": "a.wright@nordicenergy.no",
+    "message": "Inquiring regarding SAP S/4HANA migration strategy and data architecture modernization.",
+    "status": "unread",
+    "createdAt": "2026-10-20T10:09:56.416Z"
+  },
+  {
+    "id": 1792490855372,
+    "fullName": "Alexander Wright",
+    "company": "Nordic Energy Group",
+    "email": "a.wright@nordicenergy.no",
+    "message": "Inquiring regarding SAP S/4HANA migration strategy and data architecture modernization.",
+    "status": "unread",
+    "createdAt": "2026-10-20T10:07:35.372Z"
+  },
+  {
+    "id": 1,
+    "fullName": "Marcus Vance",
+    "company": "Aura Logistics Global",
+    "email": "m.vance@auralogistics.com",
+    "message": "We are seeking guidance on migrating our legacy supply chain system to SAP S/4HANA with automated tracking.",
+    "status": "unread",
+    "createdAt": "2026-10-20T08:56:27.813Z"
+  },
+  {
+    "id": 2,
+    "fullName": "Elena Rostova",
+    "company": "FinTech Nexus UK",
+    "email": "elena.rostova@fintechnexus.co.uk",
+    "message": "Interested in exploring enterprise AI agent automation for transaction reconciliation and fraud analysis.",
+    "status": "read",
+    "createdAt": "2026-10-20T06:31:27.815Z"
+  }
+]

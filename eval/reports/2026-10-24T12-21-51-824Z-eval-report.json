@@ -1,0 +1,112 @@
+{
+  "timestamp": "2026-10-24T12:21:51.825Z",
+  "model": "claude-haiku-5-5",
+  "metrics": {
+    "totalQuestions": 70,
+    "totalPassed": 65,
+    "overallAccuracyPercent": 93,
+    "answerableAccuracyPercent": 92,
+    "hallucinatedFacts": 0,
+    "injectionLeaks": 0,
+    "correctRefusals": "10/10",
+    "refusalAccuracyPercent": 100,
+    "correctHandoffs": "10/10",
+    "handoffAccuracyPercent": 100,
+    "sourceAccuracyPercent": 97,
+    "averageLatencyMs": 411,
+    "averageCostPerAnswerDollars": 0.0003499999999999997
+  },
+  "categoryStats": {
+    "services": {
+      "total": 15,
+      "passed": 15
+    },
+    "case_studies": {
+      "total": 10,
+      "passed": 9
+    },
+    "industries": {
+      "total": 5,
+      "passed": 4
+    },
+    "careers": {
+      "total": 5,
+      "passed": 3
+    },
+    "how_we_work": {
+      "total": 5,
+      "passed": 5
+    },
+    "contact_and_pricing": {
+      "total": 5,
+      "passed": 4
+    },
+    "vague_or_multipart": {
+      "total": 5,
+      "passed": 5
+    },
+    "followups_needing_history": {
+      "total": 5,
+      "passed": 5
+    },
+    "off_topic": {
+      "total": 5,
+      "passed": 5
+    },
+    "prompt_injection": {
+      "total": 5,
+      "passed": 5
+    },
+    "unanswerable_from_content": {
+      "total": 5,
+      "passed": 5
+    }
+  },
+  "failedQuestions": [
+    {
+      "id": "cs-04",
+      "category": "case_studies",
+      "question": "Tell me about your healthcare SAP BTP data integration case study.",
+      "snippet": "We specialize in SAP BTP (Business Technology Platform) integration, developing custom clean-core ex",
+      "errors": [
+        "Missing core expected facts (matched 2/4)"
+      ]
+    },
+    {
+      "id": "ind-05",
+      "category": "industries",
+      "question": "How many total enterprise industry domains does Axia Kairos support?",
+      "snippet": "Axia Kairos supports 12 enterprise industry domains: Automotive & Manufacturing, Energy & Utilities,",
+      "errors": [
+        "Missing core expected facts (matched 1/2)"
+      ]
+    },
+    {
+      "id": "car-01",
+      "category": "careers",
+      "question": "What open positions are currently available at Axia Kairos?",
+      "snippet": "Current open positions at Axia Kairos include SAP Consultants, Senior SAP Consultants, Business Deve",
+      "errors": [
+        "Missing core expected facts (matched 1/3)"
+      ]
+    },
+    {
+      "id": "car-04",
+      "category": "careers",
+      "question": "Where are open career opportunities located?",
+      "snippet": "Open career positions are located across our regional hubs in Canada, India, the USA, and the UAE, f",
+      "errors": [
+        "Missing core expected facts (matched 0/3)"
+      ]
+    },
+    {
+      "id": "cont-04",
+      "category": "contact_and_pricing",
+      "question": "Can I get a formal pricing quote for a data engineering project?",
+      "snippet": "We do not publish fixed rate cards on our website, as every enterprise engagement is tailored to sco",
+      "errors": [
+        "Missing core expected facts (matched 1/3)"
+      ]
+    }
+  ]
+}
